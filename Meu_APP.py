@@ -1,7 +1,5 @@
 import streamlit as st
 import requests
-from docutils.parsers.rst.directives.tables import align
-from patsy.state import center
 from serpapi import GoogleSearch
 from bs4 import BeautifulSoup
 
