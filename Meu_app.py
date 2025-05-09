@@ -96,14 +96,21 @@ if 'messages' not in st.session_state:
     st.session_state.messages = []
 
 # Definir variáveis globais
-api_key_OpenaAI = os.getenv('OPENAI_API_KEY')
-if not api_key_OpenaAI:
-    st.error('Chave da API OpenAI não encontrada nas variáveis de ambiente')
+try:
+    api_key_OpenaAI = st.secrets["openai"]["api_key"]
+    serpapi_key = st.secrets["serpapi"]["api_key"]
+except Exception as e:
+    st.error('Chaves de API não encontradas nas configurações do Streamlit')
+    st.stop()
+
+# Validação adicional da chave OpenAI
+if not api_key_OpenaAI.startswith('sk-'):
+    st.error('Formato da chave da API OpenAI inválido')
     st.stop()
 
 api_url = 'https://api.openai.com/v1/chat/completions'
 headers_api = {
-    'Authorization': f'Bearer {api_key_OpenaAI}',
+    'Authorization': f'Bearer {api_key_OpenaAI.strip()}',
     'Content-Type': 'application/json'
 }
 
@@ -170,15 +177,10 @@ with col2:
 
     # Botão para iniciar a análise
     # Modificação no bloco de processamento de links
-    # No bloco onde você usa a serpapi_key
+    # No bloco onde você usa a serpapi_key (remover a linha que busca do os.getenv)
     if st.button("Analisar"):
         if tema and diretriz:
             with st.spinner('Buscando e processando notícias...'):
-                serpapi_key = os.getenv('SERPAPI_KEY')
-                if not serpapi_key:
-                    st.error('Chave da API SerpAPI não encontrada nas variáveis de ambiente')
-                    st.stop()
-                
                 links = buscar_noticias(tema, serpapi_key)
                 
                 if links:
