@@ -247,27 +247,33 @@ with col2:
             with st.chat_message(msg['role']):
                 st.markdown(msg['content'])
 
-    # Permitir uma nova pergunta
-    nova_pergunta = st.chat_input("Deseja continuar a análise com outra pergunta?")
-    if nova_pergunta:
-        st.session_state.messages.append({'role': 'user', 'content': nova_pergunta})
+    # Substituir o chat_input por um text_input regular
+    nova_pergunta = st.text_input(
+        "Deseja continuar a análise com outra pergunta?",
+        key="nova_pergunta_input"
+    )
 
-        body_message = {
-            'model': modelo,
-            'messages': st.session_state.messages,
-            'temperature': 0.2,
-            'max_tokens': 4000
-        }
+    # Adicionar um botão para enviar a pergunta
+    if st.button("Enviar pergunta", key="enviar_pergunta"):
+        if nova_pergunta:
+            st.session_state.messages.append({'role': 'user', 'content': nova_pergunta})
 
-        try:
-            response_api = requests.post(api_url, headers=headers_api, json=body_message)
-            response_api.raise_for_status()
-            nova_resposta = response_api.json()['choices'][0]['message']['content']
-            st.session_state.messages.append({'role': 'assistant', 'content': nova_resposta})
-            with st.chat_message("assistant"):
-                st.markdown(nova_resposta)
-        except Exception as e:
-            st.error(f"Erro ao continuar a conversa com a API: {e}")
+            body_message = {
+                'model': modelo,
+                'messages': st.session_state.messages,
+                'temperature': 0.2,
+                'max_tokens': 4000
+            }
+
+            try:
+                response_api = requests.post(api_url, headers=headers_api, json=body_message)
+                response_api.raise_for_status()
+                nova_resposta = response_api.json()['choices'][0]['message']['content']
+                st.session_state.messages.append({'role': 'assistant', 'content': nova_resposta})
+                with st.chat_message("assistant"):
+                    st.markdown(nova_resposta)
+            except Exception as e:
+                st.error(f"Erro ao continuar a conversa com a API: {e}")
 
 # Rodapé com copyright
 st.markdown("""
