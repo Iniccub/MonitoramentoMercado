@@ -2,20 +2,105 @@ import streamlit as st
 import requests
 from serpapi import GoogleSearch
 from bs4 import BeautifulSoup
+import concurrent.futures  # Para processamento paralelo
+import time
+from typing import List, Dict  # Para tipagem
+import os
+from dotenv import load_dotenv
+
+# Carrega as variáveis de ambiente
+load_dotenv()
 
 # Configurações iniciais
 st.set_page_config(
     page_title="Monitoramento de Mercado",
     page_icon="icon.png",
-    layout="wide"
+    layout="wide",
+    initial_sidebar_state="collapsed"  # Melhora o espaço útil inicial
 )
+
+# Cache para resultados de busca
+@st.cache_data(ttl=3600)  # Cache por 1 hora
+def buscar_noticias(tema: str, serpapi_key: str) -> List[str]:
+    params = {
+        'q': tema,
+        'tbm': 'nws',
+        'hl': 'pt-br',
+        'gl': 'br',
+        'api_key': serpapi_key
+    }
+    try:
+        search = GoogleSearch(params)
+        resultados = search.get_dict()
+        return [noticia.get('link') for noticia in resultados.get('news_results', []) if noticia.get('link')]
+    except Exception as e:
+        st.error(f"Erro na busca de notícias: {str(e)}")
+        return []
+
+# Função otimizada para extrair texto de uma URL
+def limpar_texto(texto: str) -> str:
+    """Remove caracteres especiais e formata o texto."""
+    import re
+    texto = re.sub(r'\s+', ' ', texto)  # Remove espaços múltiplos
+    texto = re.sub(r'[^\w\s.,!?-]', '', texto)  # Remove caracteres especiais
+    return texto.strip()
+
+def extrair_texto_url(url: str, headers: Dict[str, str]) -> str:
+    try:
+        with requests.get(url, headers=headers, timeout=10) as response:
+            response.raise_for_status()
+            soup = BeautifulSoup(response.text, 'html.parser')
+            
+            # Remove elementos irrelevantes
+            for elemento in soup.find_all(['script', 'style', 'nav', 'footer', 'header']):
+                elemento.decompose()
+            
+            # Extrai texto de elementos relevantes, incluindo tabelas
+            textos = []
+            
+            # Processa elementos de texto normais
+            for p in soup.find_all(['p', 'article', 'section', 'h1', 'h2', 'h3']):
+                if len(p.get_text().strip()) > 50:
+                    textos.append(p.get_text())
+            
+            # Processa tabelas
+            for tabela in soup.find_all('table'):
+                texto_tabela = []
+                # Processa cabeçalho da tabela
+                headers = []
+                for th in tabela.find_all('th'):
+                    headers.append(th.get_text().strip())
+                if headers:
+                    texto_tabela.append(" | ".join(headers))
+                    texto_tabela.append("-" * 50)  # Linha separadora
+                
+                # Processa linhas da tabela
+                for tr in tabela.find_all('tr'):
+                    linha = []
+                    for td in tr.find_all('td'):
+                        linha.append(td.get_text().strip())
+                    if linha:
+                        texto_tabela.append(" | ".join(linha))
+                
+                if texto_tabela:
+                    textos.append("\n".join(texto_tabela))
+            
+            texto_final = '\n\n'.join(textos)
+            return limpar_texto(texto_final)
+    except Exception as e:
+        st.error(f"Erro ao extrair texto: {str(e)}")
+        return ""
 
 # Inicializar a sessão de estado para armazenar o histórico da conversa
 if 'messages' not in st.session_state:
     st.session_state.messages = []
 
 # Definir variáveis globais
-api_key_OpenaAI = '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'  # Substitua pela sua chave real
+api_key_OpenaAI = os.getenv('OPENAI_API_KEY')
+if not api_key_OpenaAI:
+    st.error('Chave da API OpenAI não encontrada nas variáveis de ambiente')
+    st.stop()
+
 api_url = 'https://api.openai.com/v1/chat/completions'
 headers_api = {
     'Authorization': f'Bearer {api_key_OpenaAI}',
@@ -57,8 +142,8 @@ with col2:
     st.write("__")
 
     # Textos de descrição dos modelos de IA
-    texto_GPT4o_mini = "🤖 - O o4-mini é o mais recente modelo compacto da série O. Ele é otimizado para raciocínio rápido e eficaz, com desempenho excepcionalmente eficiente em tarefas visuais e de codificação. A pesquisa é a de menor custo de todos os modelos."
-    texto_GPT4o = "🤖 - O GPT-4o (“o” de “omni”) é o modelo topo de linha, versátil e altamente inteligente. Ele aceita entradas de texto e imagem e produz saídas de texto (incluindo Saídas Estruturadas). É o melhor modelo para a maioria das tarefas e mais capaz dos modelos da série O. A pesquisa tem maior custo, porém mais baixo em comparação aos modelos mais complexos."
+    texto_GPT4o_mini = "🤖 - O GPT 4o-mini é o mais recente modelo compacto da série O. Ele é otimizado para raciocínio rápido e eficaz, com desempenho excepcionalmente eficiente em tarefas visuais e de codificação. A pesquisa é a de menor custo de todos os modelos."
+    texto_GPT4o = "🤖 - O GPT-4o (\"o\" de \"omni\") é o modelo topo de linha, versátil e altamente inteligente. Ele aceita entradas de texto e imagem e produz saídas de texto (incluindo Saídas Estruturadas). É o melhor modelo para a maioria das tarefas e mais capaz dos modelos da série O. A pesquisa tem maior custo, porém mais baixo em comparação aos modelos mais complexos."
     texto_GPT41_nano = "🤖 - O GPT-4.1 nano é o modelo GPT-4.1 mais rápido e econômico."
 
     # Deploy dos textos de descrição dos modelos de IA
@@ -84,74 +169,76 @@ with col2:
     )
 
     # Botão para iniciar a análise
+    # Modificação no bloco de processamento de links
+    # No bloco onde você usa a serpapi_key
     if st.button("Analisar"):
         if tema and diretriz:
-            # Função para buscar notícias
-            def buscar_noticias(tema, serpapi_key):
-                params = {
-                    'q': tema,
-                    'tbm': 'nws',
-                    'hl': 'pt-br',
-                    'gl': 'br',
-                    'api_key': serpapi_key
-                }
-                search = GoogleSearch(params)
-                resultados = search.get_dict()
-                noticias = resultados.get('news_results', [])
-                links = [noticia.get('link') for noticia in noticias if noticia.get('link')]
-                return links
+            with st.spinner('Buscando e processando notícias...'):
+                serpapi_key = os.getenv('SERPAPI_KEY')
+                if not serpapi_key:
+                    st.error('Chave da API SerpAPI não encontrada nas variáveis de ambiente')
+                    st.stop()
+                
+                links = buscar_noticias(tema, serpapi_key)
+                
+                if links:
+                    # Processamento paralelo das URLs
+                    headers = {
+                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0.0.0 Safari/537.36'
+                    }
+                    
+                    # Processamento paralelo otimizado
+                    with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
+                        futures = [executor.submit(extrair_texto_url, link, headers) for link in links]
+                        textos = []
+                        
+                        # Barra de progresso
+                        progress_bar = st.progress(0)
+                        for i, future in enumerate(concurrent.futures.as_completed(futures)):
+                            texto = future.result()
+                            if texto:  # Só adiciona textos não vazios
+                                textos.append(texto)
+                            progress_bar.progress((i + 1) / len(futures))
+                        
+                        texto_completo = '\n\n'.join(textos)
+                        
+                        # Otimização do prompt para a IA
+                        prompt_otimizado = f"""
+                        Analise o seguinte conjunto de notícias sobre '{tema}' e responda de acordo com a diretriz: '{diretriz}'
+                        
+                        Pontos importantes a considerar:
+                        1. Foque nos fatos mais relevantes e atuais
+                        2. Identifique tendências e padrões
+                        3. Considere o impacto no contexto específico da Rede Lius
+                        4. Forneça insights acionáveis
+                        
+                        Texto para análise: {texto_completo[:8000]}
+                        """
+                        
+                        # Atualiza as mensagens com o prompt otimizado
+                        st.session_state.messages.append({
+                            'role': 'user',
+                            'content': prompt_otimizado,
+                            'exibir': False
+                        })
 
-            serpapi_key = '496c9ec55a6a44077bb35f27348da4d2d305c319d0d9e28b8a7b309e5d598f8f'  # Substitua pela sua chave real
-            links = buscar_noticias(tema, serpapi_key)
+                        # Configuração otimizada para a API da OpenAI
+                        body_message = {
+                            'model': modelo,
+                            'messages': st.session_state.messages,
+                            'temperature': 0.3,  # Reduzido para maior precisão
+                            'max_tokens': 4000,
+                            'presence_penalty': 0.1,  # Encoraja diversidade moderada
+                            'frequency_penalty': 0.1  # Evita repetições
+                        }
 
-            # Exibir links em uma caixa de texto
-            if links:
-                links_texto = '\n'.join(links)
-                st.text_area("Links das notícias encontradas:", value=links_texto, height=200)
-            else:
-                st.write("Nenhum link encontrado.")
-
-            # Extração de texto das notícias
-            headers = {
-                'User-Agent': (
-                    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) '
-                    'AppleWebKit/537.36 (KHTML, like Gecko) '
-                    'Chrome/135.0.0.0 Safari/537.36'
-                )
-            }
-            textos = []
-            for i, link in enumerate(links, start=1):
-                try:
-                    response = requests.get(link, headers=headers)
-                    response.raise_for_status()
-                    soup = BeautifulSoup(response.text, 'html.parser')
-                    paragrafos = soup.find_all('p')
-                    texto = ' '.join(paragrafo.get_text() for paragrafo in paragrafos)
-                    textos.append(texto)
-                except requests.RequestException as e:
-                    st.write(f'Erro ao acessar ou processar o link {i} ({link}): {e}')
-
-            texto_completo = '\n\n'.join(textos)
-
-            # Adicionar a diretriz e o texto completo ao histórico de mensagens
-            st.session_state.messages.append({'role': 'user', 'content': f'Texto: {texto_completo}', 'exibir': False})
-            st.session_state.messages.append({'role': 'user', 'content': f'Diretriz: {diretriz}'})
-
-            # Enviar para API da OpenAI
-            body_message = {
-                'model': modelo,
-                'messages': st.session_state.messages,
-                'temperature': 0.2,
-                'max_tokens': 4000
-            }
-
-            try:
-                response_api = requests.post(api_url, headers=headers_api, json=body_message)
-                response_api.raise_for_status()
-                resposta = response_api.json()['choices'][0]['message']['content']
-                st.session_state.messages.append({'role': 'assistant', 'content': resposta})
-            except Exception as e:
-                st.error(f"Erro ao chamar a API da OpenAI: {e}")
+                    try:
+                        response_api = requests.post(api_url, headers=headers_api, json=body_message)
+                        response_api.raise_for_status()
+                        resposta = response_api.json()['choices'][0]['message']['content']
+                        st.session_state.messages.append({'role': 'assistant', 'content': resposta})
+                    except Exception as e:
+                        st.error(f"Erro ao chamar a API da OpenAI: {e}")
 
 
     # Mostrar o histórico da conversa
