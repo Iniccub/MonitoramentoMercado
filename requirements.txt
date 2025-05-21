@@ -1,5 +1,23 @@
-streamlit==1.29.0
+# Bibliotecas principais
+streamlit==1.32.0
 requests==2.31.0
 google-search-results==2.4.2
 beautifulsoup4==4.12.2
 python-dotenv==1.0.0
+
+# Bibliotecas para visualização de dados
+plotly==5.18.0
+pandas==2.1.1
+
+# Bibliotecas para processamento de texto
+nltk==3.8.1
+
+# Bibliotecas para geração de PDF
+reportlab==4.0.7
+
+# Bibliotecas para processamento paralelo
+concurrent-futures==3.0.5
+
+# Dependências adicionais
+lxml==4.9.3
+html5lib==1.1
